@@ -1,21 +1,35 @@
 import { useState, useRef, useEffect } from "react";
 
-/* ── Global pixel styles & font ───────────────────────────── */
+/* ── Global styles — two font worlds coexist ──────────────── */
 const G = () => (
   <style>{`
-    @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Syne:wght@400;500;600;700;800&family=Syne+Mono&display=swap');
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { background: #060610; }
 
+    /* ── Pixel HQ animations ── */
     @keyframes blink   { 0%,100%{opacity:1} 50%{opacity:0} }
-    @keyframes march   { to { background-position: 16px 0; } }
     @keyframes flicker { 0%,100%{opacity:1} 92%{opacity:.85} 94%{opacity:1} 97%{opacity:.9} }
-    @keyframes slideUp { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:none} }
+    @keyframes slideUp { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:none} }
     @keyframes boot    { 0%{width:0} 100%{width:100%} }
+
+    /* ── Landing animations ── */
+    @keyframes fadeIn   { from{opacity:0;transform:translateY(22px)} to{opacity:1;transform:none} }
+    @keyframes gridPan  { from{background-position:0 0} to{background-position:40px 40px} }
+    @keyframes dotPulse { 0%,100%{transform:scale(1);opacity:.5} 50%{transform:scale(1.6);opacity:1} }
+    @keyframes tagSlide { from{opacity:0;transform:translateX(-8px)} to{opacity:1;transform:none} }
 
     .blink  { animation: blink   1s step-end infinite; }
     .blink2 { animation: blink 1.4s step-end infinite; }
     .flick  { animation: flicker 6s ease-in-out infinite; }
+
+    /* ── Landing fade-in stagger ── */
+    .land-hero  { animation: fadeIn .7s ease-out both; }
+    .land-sub   { animation: fadeIn .7s .12s ease-out both; }
+    .land-desc  { animation: fadeIn .7s .22s ease-out both; }
+    .land-cta   { animation: fadeIn .7s .34s ease-out both; }
+    .land-cards { animation: fadeIn .7s .46s ease-out both; }
+    .land-tag   { animation: tagSlide .5s ease-out both; }
 
     ::-webkit-scrollbar       { width: 5px; }
     ::-webkit-scrollbar-track { background: #0a0a18; }
@@ -34,6 +48,34 @@ const G = () => (
     }
     .pixel-input:focus { border-color: var(--ac); }
     .pixel-input::placeholder { color: #ffffff22; }
+
+    /* ── Landing CTA button ── */
+    .try-btn {
+      background: #7B61FF;
+      color: #fff;
+      border: none;
+      padding: 16px 44px;
+      font-family: 'Syne', sans-serif;
+      font-weight: 700;
+      font-size: 15px;
+      letter-spacing: 0.06em;
+      cursor: pointer;
+      transition: background .18s, transform .12s;
+      position: relative;
+      clip-path: polygon(8px 0%, 100% 0%, calc(100% - 8px) 100%, 0% 100%);
+    }
+    .try-btn:hover { background: #9B81FF; transform: translateY(-2px); }
+    .try-btn:active { transform: translateY(0); }
+
+    /* ── Agent preview card ── */
+    .agent-prev {
+      background: #0c0c1e;
+      border: 1px solid #ffffff0d;
+      padding: 20px 18px 18px;
+      transition: border-color .18s, transform .18s;
+      cursor: default;
+    }
+    .agent-prev:hover { border-color: var(--ac); transform: translateY(-3px); }
   `}</style>
 );
 
@@ -133,27 +175,298 @@ const Sprite = ({ pattern, color, px = 9 }) => (
   </div>
 );
 
-/* ── Main platform ────────────────────────────────────────── */
+/* ── Mini pixel sprite (reused in landing preview) ───────── */
+const MiniSprite = ({ pattern, color, px = 6 }) => (
+  <div style={{ display: "inline-block", lineHeight: 0 }}>
+    {pattern.map((row, i) => (
+      <div key={i} style={{ display: "flex" }}>
+        {row.map((on, j) => (
+          <div key={j} style={{ width: px, height: px, backgroundColor: on ? color : "transparent" }} />
+        ))}
+      </div>
+    ))}
+  </div>
+);
+
+/* ── Landing Page ─────────────────────────────────────────── */
+const LandingPage = ({ onEnter }) => (
+  <div style={{
+    minHeight: "100vh",
+    background: "#060610",
+    fontFamily: "'Syne', sans-serif",
+    color: "#e4e4f0",
+    position: "relative",
+    overflow: "hidden",
+  }}>
+    {/* Animated dot-grid background — subtle, not distracting */}
+    <div style={{
+      position: "fixed", inset: 0, pointerEvents: "none", zIndex: 0,
+      backgroundImage: "radial-gradient(circle, #ffffff08 1px, transparent 1px)",
+      backgroundSize: "32px 32px",
+      animation: "gridPan 18s linear infinite",
+    }} />
+
+    {/* Glow orbs for depth */}
+    <div style={{ position: "fixed", top: "10%", left: "15%", width: 360, height: 360, borderRadius: "50%", background: "radial-gradient(circle, #7B61FF18 0%, transparent 70%)", pointerEvents: "none", zIndex: 0 }} />
+    <div style={{ position: "fixed", bottom: "15%", right: "10%", width: 280, height: 280, borderRadius: "50%", background: "radial-gradient(circle, #00E5A018 0%, transparent 70%)", pointerEvents: "none", zIndex: 0 }} />
+
+    {/* ── NAV ── */}
+    <nav style={{
+      position: "relative", zIndex: 10,
+      padding: "24px 64px",
+      display: "flex", alignItems: "center", justifyContent: "space-between",
+      borderBottom: "1px solid #ffffff08",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        {/* Tiny pixel logo accents */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 3 }}>
+          {["#7B61FF","#00E5A0","#FF6B6B","#FFD700"].map((c, i) => (
+            <div key={i} style={{ width: 8, height: 8, backgroundColor: c }} />
+          ))}
+        </div>
+        <span style={{ fontWeight: 800, fontSize: 18, letterSpacing: "0.04em", color: "#fff" }}>
+          PixelForce HQ
+        </span>
+      </div>
+      <div style={{ display: "flex", gap: 32, alignItems: "center" }}>
+        <a href="#agents" style={{ color: "#ffffff55", fontSize: 13, textDecoration: "none", fontWeight: 500, letterSpacing: "0.04em" }}>Agents</a>
+        <a href="#how" style={{ color: "#ffffff55", fontSize: 13, textDecoration: "none", fontWeight: 500, letterSpacing: "0.04em" }}>How it works</a>
+        <span style={{
+          fontSize: 11, fontFamily: "'Syne Mono', monospace",
+          color: "#7B61FF", border: "1px solid #7B61FF44",
+          padding: "4px 10px", letterSpacing: "0.08em",
+        }}>v1.0.0</span>
+      </div>
+    </nav>
+
+    {/* ── HERO ── */}
+    <section style={{
+      position: "relative", zIndex: 10,
+      maxWidth: 860, margin: "0 auto",
+      padding: "90px 40px 64px",
+      textAlign: "center",
+    }}>
+      {/* Label badge */}
+      <div className="land-tag" style={{
+        display: "inline-flex", alignItems: "center", gap: 8,
+        background: "#7B61FF14", border: "1px solid #7B61FF35",
+        padding: "6px 16px", marginBottom: 36,
+      }}>
+        <div style={{ width: 6, height: 6, background: "#7B61FF", animation: "dotPulse 2s ease-in-out infinite" }} />
+        <span style={{ fontSize: 11, color: "#9B81FF", fontFamily: "'Syne Mono', monospace", letterSpacing: "0.1em" }}>
+          AI AGENT COMMAND CENTER
+        </span>
+      </div>
+
+      <h1 className="land-hero" style={{
+        fontSize: "clamp(38px, 6vw, 68px)",
+        fontWeight: 800,
+        lineHeight: 1.1,
+        letterSpacing: "-0.03em",
+        color: "#fff",
+        marginBottom: 24,
+      }}>
+        Your AI team,<br />
+        <span style={{ color: "#7B61FF" }}>always on duty.</span>
+      </h1>
+
+      <p className="land-sub" style={{
+        fontSize: 18, lineHeight: 1.75, color: "#9090b0",
+        maxWidth: 560, margin: "0 auto 16px", fontWeight: 400,
+      }}>
+        PixelForce HQ is a multi-agent platform where four specialized AI agents — each with a distinct role, personality, and domain — work together as your digital squad.
+      </p>
+
+      <p className="land-desc" style={{
+        fontSize: 15, color: "#ffffff30", marginBottom: 44,
+        fontFamily: "'Syne Mono', monospace", letterSpacing: "0.04em",
+      }}>
+        Powered by Claude · Built for teams that move fast
+      </p>
+
+      <div className="land-cta" style={{ display: "flex", gap: 14, justifyContent: "center", alignItems: "center" }}>
+        <button className="try-btn" onClick={onEnter}>
+          Launch the HQ ↗
+        </button>
+        <a href="#how" style={{
+          color: "#ffffff45", fontSize: 13, fontWeight: 600,
+          textDecoration: "none", letterSpacing: "0.04em",
+          borderBottom: "1px solid #ffffff18", paddingBottom: 2,
+        }}>See how it works</a>
+      </div>
+    </section>
+
+    {/* ── AGENT CARDS PREVIEW ── */}
+    <section id="agents" style={{
+      position: "relative", zIndex: 10,
+      maxWidth: 1000, margin: "0 auto",
+      padding: "40px 40px 80px",
+    }}>
+      <div style={{ textAlign: "center", marginBottom: 40 }}>
+        <p style={{ fontSize: 11, color: "#ffffff28", fontFamily: "'Syne Mono', monospace", letterSpacing: "0.12em", marginBottom: 10 }}>
+          SQUAD ROSTER
+        </p>
+        <h2 style={{ fontSize: 28, fontWeight: 700, color: "#fff", letterSpacing: "-0.02em" }}>
+          Meet your agents
+        </h2>
+      </div>
+
+      <div className="land-cards" style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+        gap: 14,
+      }}>
+        {AGENTS.map(a => (
+          <div
+            key={a.id}
+            className="agent-prev"
+            style={{ "--ac": a.color }}
+          >
+            {/* Colored top accent line */}
+            <div style={{ height: 2, background: a.color, marginBottom: 18, opacity: 0.7 }} />
+
+            <div style={{ marginBottom: 14 }}>
+              <MiniSprite pattern={a.icon} color={a.color} px={7} />
+            </div>
+
+            <p style={{
+              fontSize: 11, fontFamily: "'Syne Mono', monospace",
+              color: a.color, letterSpacing: "0.08em", marginBottom: 6,
+            }}>{a.name}</p>
+
+            <p style={{ fontSize: 13, fontWeight: 700, color: "#e0e0e0", marginBottom: 8 }}>
+              {a.role}
+            </p>
+
+            <p style={{ fontSize: 12, color: "#ffffff38", lineHeight: 1.65 }}>
+              {a.tagline}
+            </p>
+          </div>
+        ))}
+      </div>
+    </section>
+
+    {/* ── HOW IT WORKS ── */}
+    <section id="how" style={{
+      position: "relative", zIndex: 10,
+      maxWidth: 760, margin: "0 auto",
+      padding: "20px 40px 80px",
+      borderTop: "1px solid #ffffff08",
+    }}>
+      <div style={{ textAlign: "center", marginBottom: 48 }}>
+        <p style={{ fontSize: 11, color: "#ffffff28", fontFamily: "'Syne Mono', monospace", letterSpacing: "0.12em", marginBottom: 10 }}>
+          HOW IT WORKS
+        </p>
+        <h2 style={{ fontSize: 28, fontWeight: 700, color: "#fff", letterSpacing: "-0.02em" }}>
+          Role-based AI, not a chatbot
+        </h2>
+      </div>
+
+      {[
+        { n: "01", title: "Pick an agent", desc: "Choose from COMMANDER, SCRIBE, AMPLIFIER, or REGISTRY — each one is a specialist, not a generalist." },
+        { n: "02", title: "Assign a mission", desc: "Send your brief. The agent responds with the expertise, tone, and output format native to its role." },
+        { n: "03", title: "Build your workflow", desc: "Start with COMMANDER to plan, then delegate to the right squad member. Each conversation is independent." },
+      ].map(({ n, title, desc }) => (
+        <div key={n} style={{
+          display: "flex", gap: 24, alignItems: "flex-start",
+          marginBottom: 32, padding: "24px 28px",
+          background: "#0a0a1a", border: "1px solid #ffffff08",
+        }}>
+          <span style={{
+            fontFamily: "'Syne Mono', monospace",
+            fontSize: 12, color: "#7B61FF66",
+            flexShrink: 0, paddingTop: 2,
+          }}>{n}</span>
+          <div>
+            <p style={{ fontWeight: 700, fontSize: 15, color: "#e8e8f0", marginBottom: 6 }}>{title}</p>
+            <p style={{ fontSize: 13, color: "#7070a0", lineHeight: 1.7 }}>{desc}</p>
+          </div>
+        </div>
+      ))}
+
+      {/* Bottom CTA */}
+      <div style={{ textAlign: "center", marginTop: 48 }}>
+        <button className="try-btn" onClick={onEnter} style={{ fontSize: 14 }}>
+          Open PixelForce HQ ↗
+        </button>
+      </div>
+    </section>
+
+    {/* ── FOOTER ── */}
+    <footer style={{
+      position: "relative", zIndex: 10,
+      padding: "24px 64px",
+      borderTop: "1px solid #ffffff06",
+      display: "flex", justifyContent: "space-between", alignItems: "center",
+    }}>
+      <span style={{ fontSize: 12, color: "#ffffff18", fontFamily: "'Syne Mono', monospace" }}>
+        PixelForce HQ · Built with Claude
+      </span>
+      <div style={{ display: "flex", gap: 6 }}>
+        {AGENTS.map(a => (
+          <div key={a.id} style={{ width: 6, height: 6, background: a.color, opacity: 0.4 }} />
+        ))}
+      </div>
+    </footer>
+  </div>
+);
+
+/* ── Boot Screen ──────────────────────────────────────────── */
+const BootScreen = () => (
+  <>
+    <G />
+    <div style={{
+      minHeight: "100vh", background: "#060610",
+      display: "flex", flexDirection: "column",
+      alignItems: "center", justifyContent: "center",
+      fontFamily: "'Press Start 2P', monospace",
+    }}>
+      <div style={{ color: "#7B61FF", fontSize: "0.9rem", letterSpacing: "0.08em", marginBottom: 28 }}>
+        PIXELFORCE HQ
+      </div>
+      <div style={{ width: 220, height: 6, backgroundColor: "#ffffff10", overflow: "hidden" }}>
+        <div style={{ height: "100%", backgroundColor: "#7B61FF", animation: "boot 1.1s ease-out forwards" }} />
+      </div>
+      <div style={{ color: "#ffffff30", fontSize: "0.38rem", marginTop: 16, letterSpacing: "0.12em" }}>
+        LOADING AGENTS...
+      </div>
+    </div>
+  </>
+);
+
+/* ── Main HQ Platform ─────────────────────────────────────── */
 export default function PixelForceHQ() {
+  // page: 'landing' | 'booting' | 'hq'
+  const [page, setPage]       = useState("landing");
   const [active, setActive]   = useState(null);
   const [chats, setChats]     = useState({});
   const [input, setInput]     = useState("");
   const [loading, setLoading] = useState(false);
-  const [booted, setBooted]   = useState(false);
   const endRef = useRef(null);
 
   const agent = AGENTS.find(a => a.id === active);
   const msgs  = active ? (chats[active] || []) : [];
 
-  /* Boot sequence */
-  useEffect(() => {
-    const t = setTimeout(() => setBooted(true), 1200);
-    return () => clearTimeout(t);
-  }, []);
+  /* When "Try it" clicked → boot animation → HQ */
+  const handleEnter = () => {
+    setPage("booting");
+    setTimeout(() => setPage("hq"), 1400);
+  };
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chats, active, loading]);
+
+  /* Render landing */
+  if (page === "landing") return (
+    <>
+      <G />
+      <LandingPage onEnter={handleEnter} />
+    </>
+  );
+
+  /* Render boot */
+  if (page === "booting") return <BootScreen />;
 
   const send = async () => {
     if (!input.trim() || loading || !active) return;
@@ -183,35 +496,6 @@ export default function PixelForceHQ() {
       setLoading(false);
     }
   };
-
-  /* ── BOOT SCREEN ── */
-  if (!booted) return (
-    <>
-      <G />
-      <div style={{
-        minHeight: "100vh", background: "#060610",
-        display: "flex", flexDirection: "column",
-        alignItems: "center", justifyContent: "center",
-        fontFamily: "'Press Start 2P', monospace",
-      }}>
-        <div style={{ color: "#7B61FF", fontSize: "0.9rem", letterSpacing: "0.08em", marginBottom: 28 }}>
-          PIXELFORCE HQ
-        </div>
-        <div style={{
-          width: 220, height: 6, backgroundColor: "#ffffff10",
-          overflow: "hidden",
-        }}>
-          <div style={{
-            height: "100%", backgroundColor: "#7B61FF",
-            animation: "boot 1.1s ease-out forwards",
-          }} />
-        </div>
-        <div style={{ color: "#ffffff30", fontSize: "0.38rem", marginTop: 16, letterSpacing: "0.12em" }}>
-          LOADING AGENTS...
-        </div>
-      </div>
-    </>
-  );
 
   /* ── MAIN UI ── */
   return (
@@ -256,9 +540,20 @@ export default function PixelForceHQ() {
             </div>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
-            {/* Version badge */}
-            <span style={{ fontSize: "0.33rem", color: "#ffffff20", letterSpacing: "0.1em" }}>v1.0.0</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            <button
+              onClick={() => setPage("landing")}
+              style={{
+                background: "none", border: "1px solid #ffffff15",
+                color: "#ffffff40", padding: "5px 12px",
+                fontFamily: "'Press Start 2P', monospace",
+                fontSize: "0.3rem", cursor: "pointer",
+                letterSpacing: "0.06em",
+                transition: "color .15s, border-color .15s",
+              }}
+              onMouseEnter={e => { e.target.style.color="#ffffff80"; e.target.style.borderColor="#ffffff30"; }}
+              onMouseLeave={e => { e.target.style.color="#ffffff40"; e.target.style.borderColor="#ffffff15"; }}
+            >← HOME</button>
             {/* Status */}
             <div style={{
               display: "flex", alignItems: "center", gap: 8,

@@ -32,6 +32,35 @@ export default function GlobalStyles() {
       }
       .pixel-input:focus { border-color: var(--ac); }
       .pixel-input::placeholder { color: #ffffff22; }
+
+      .try-btn {
+        background: #7B61FF;
+        border: none;
+        color: #fff;
+        font-family: 'Syne', sans-serif;
+        font-size: 14px;
+        font-weight: 600;
+        padding: 14px 28px;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        letter-spacing: 0.02em;
+        position: relative;
+        overflow: hidden;
+      }
+      .try-btn::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+        transition: left 0.5s;
+      }
+      .try-btn:hover::before { left: 100%; }
+      .try-btn:hover { background: #9B81FF; transform: translateY(-2px); }
+      .try-btn:active { transform: translateY(0); }
     `}</style>
   );
 }

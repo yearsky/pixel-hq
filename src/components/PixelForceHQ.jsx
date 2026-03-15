@@ -1,24 +1,23 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import GlobalStyles from "./GlobalStyles";
 import BootScreen from "./BootScreen";
+import LandingPage from "./LandingPage";
 import AgentRoster from "./AgentRoster";
 import ChatPanel from "./ChatPanel";
 import { AGENTS } from "./agents";
 
 export default function PixelForceHQ() {
+  // page: 'landing' | 'booting' | 'hq'
+  const [page, setPage] = useState("landing");
   const [active, setActive] = useState(null);
   const [chats, setChats] = useState({});
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [booted, setBooted] = useState(false);
 
   const agent = AGENTS.find((a) => a.id === active);
   const msgs = active ? chats[active] || [] : [];
 
-  useEffect(() => {
-    const t = setTimeout(() => setBooted(true), 1200);
-    return () => clearTimeout(t);
-  }, []);
+  const handleEnter = () => setPage("booting");
 
   const send = async () => {
     if (!input.trim() || loading || !active) return;
@@ -53,13 +52,23 @@ export default function PixelForceHQ() {
     }
   };
 
-  if (!booted) return (
+  /* Render landing */
+  if (page === "landing") return (
     <>
       <GlobalStyles />
-      <BootScreen />
+      <LandingPage onEnter={handleEnter} />
     </>
   );
 
+  /* Render boot screen */
+  if (page === "booting") return (
+    <>
+      <GlobalStyles />
+      <BootScreen onComplete={() => setPage("hq")} />
+    </>
+  );
+
+  /* Render HQ */
   return (
     <>
       <GlobalStyles />
@@ -114,6 +123,21 @@ export default function PixelForceHQ() {
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+            <button
+              onClick={() => setPage("landing")}
+              style={{
+                background: "none",
+                border: "1px solid #ffffff18",
+                color: "#ffffff50",
+                padding: "6px 12px",
+                cursor: "pointer",
+                fontFamily: "'Press Start 2P', monospace",
+                fontSize: "0.3rem",
+                letterSpacing: "0.08em",
+              }}
+            >
+              ← BACK
+            </button>
             <span style={{ fontSize: "0.33rem", color: "#ffffff20", letterSpacing: "0.1em" }}>
               v1.0.0
             </span>

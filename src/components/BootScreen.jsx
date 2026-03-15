@@ -1,4 +1,13 @@
-export default function BootScreen() {
+import { useEffect } from "react";
+
+export default function BootScreen({ onComplete }) {
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      onComplete && onComplete();
+    }, 1100); // Match the animation duration
+    return () => clearTimeout(timer);
+  }, [onComplete]);
+
   return (
     <div
       style={{

@@ -10,6 +10,8 @@ export default function GlobalStyles() {
       @keyframes flicker { 0%,100%{opacity:1} 92%{opacity:.85} 94%{opacity:1} 97%{opacity:.9} }
       @keyframes slideUp { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:none} }
       @keyframes boot    { 0%{width:0} 100%{width:100%} }
+      @keyframes gridPan { 0% { background-position: 0 0; } 100% { background-position: 32px 32px; } }
+      @keyframes dotPulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.7; transform: scale(0.9); } }
 
       .blink  { animation: blink   1s step-end infinite; }
       .blink2 { animation: blink 1.4s step-end infinite; }

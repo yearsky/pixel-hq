@@ -1,5 +1,6 @@
 import PropTypes from "prop-types";
 import { AGENTS, P } from "../constants/world";
+import { renderMarkdown } from "../utils/renderMarkdown";
 
 export default function InteractionPanel({
   isStacked,
@@ -94,7 +95,9 @@ export default function InteractionPanel({
                     <span style={{ fontSize: "11px", color: f.color, fontWeight: 800 }}>{f.speaker}</span>
                     <span style={{ fontSize: "10px", color: "#475569" }}>{f.time}</span>
                   </div>
-                  <div style={{ fontSize: "13px", color: "#f1f5f9", lineHeight: 1.5 }}>{f.text}</div>
+                  <div style={{ fontSize: "13px", color: "#f1f5f9", lineHeight: 1.5 }}>
+                    {f.speaker === "USER" || f.speaker.startsWith("COMMANDER →") ? f.text : renderMarkdown(f.text)}
+                  </div>
                 </div>
               ))}
               <div ref={feedEndRef} />
@@ -127,8 +130,8 @@ export default function InteractionPanel({
                     }}
                   >
                     <div style={{ fontSize: "10px", color: isUser ? "#94a3b8" : activeAgent?.color, fontWeight: 800, marginBottom: 6, textTransform: "uppercase" }}>{isUser ? "YOU" : activeAgent?.name}</div>
-                    <div style={{ fontSize: "14px", color: "#f1f5f9", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
-                      {displayContent}
+                    <div style={{ fontSize: "14px", color: "#f1f5f9", lineHeight: 1.6, whiteSpace: isUser ? "pre-wrap" : undefined }}>
+                      {isUser ? displayContent : renderMarkdown(displayContent)}
                       {isTyping && (
                         <span className="blink" style={{ color: activeAgent?.color, marginLeft: 2, fontWeight: "bold" }}>
                           ▮

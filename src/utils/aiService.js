@@ -19,9 +19,8 @@ export async function streamChatResponse({
       body: JSON.stringify({
         sessionId: "default",
         agentId,
-        system,
         messages: messages.map(m => ({ role: m.role, content: m.content })),
-        maxTokens: 800,
+        maxTokens: 2000,
         stream: true
       }),
     });

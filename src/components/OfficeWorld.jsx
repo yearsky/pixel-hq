@@ -275,7 +275,8 @@ export default function OfficeWorld({ onBack, chats, setChats }) {
   }, [handleWheel]);
 
   const dispatchToAgent = useCallback(async (targetAgentId, taskText, setChatsRef, setAgentStatusRef, pushFeedRef) => {
-    const target = AGENTS.find(a => a.id === targetAgentId); if (!target) return;
+    const target = AGENTS.find(a => a.id === targetAgentId);
+    if (!target) return { agentId: targetAgentId, name: targetAgentId, result: null };
     const taskLabel = `[COMMANDER ASSIGNMENT] ${taskText}`;
     updateAgentStatus(targetAgentId, "thinking", "Receiving orders...", setAgentStatusRef);
     pushFeedRef([{
@@ -289,33 +290,86 @@ export default function OfficeWorld({ onBack, chats, setChats }) {
       const assistantTs = Date.now();
       setChatsRef(prev => ({ ...prev, [targetAgentId]: [...(prev[targetAgentId] || []), { role: "assistant", content: "", ts: assistantTs }] }));
       const fullContent = await streamChatResponse({
-        agentId: targetAgentId, system: target.system, messages: [...history, { role: "user", content: taskLabel }],
+        agentId: targetAgentId,
+        messages: [...history, { role: "user", content: taskLabel }],
         onToken: (delta, currentFull) => { updateAgentChat(targetAgentId, assistantTs, currentFull, setChatsRef); updateAgentStatus(targetAgentId, "responding", "TYPING...", setAgentStatusRef); },
       });
       const newTok = Math.floor(fullContent.length / 4);
       setAgentStatusRef(prev => ({
         ...prev, [targetAgentId]: {
           status: "responding", tokens: (prev[targetAgentId].tokens || 0) + newTok,
-          cost: parseFloat(((prev[targetAgentId].cost || 0) + (newTok * 0.000003)).toFixed(4)), activity: "Task received",
+          cost: parseFloat(((prev[targetAgentId].cost || 0) + (newTok * 0.000003)).toFixed(4)), activity: "Task complete",
         },
       }));
       pushFeedRef([{ id: `${Date.now()}-${targetAgentId}-resp`, speaker: target.name, speakerId: target.id, color: target.color, text: fullContent, time: new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) }]);
       setTimeout(() => updateAgentStatus(targetAgentId, "idle", "Idling around", setAgentStatusRef), 2500);
-    } catch (err) { updateAgentStatus(targetAgentId, "idle", "Dispatch failed", setAgentStatusRef); }
+      // Return result so COMMANDER can compile the After Action Report
+      return { agentId: targetAgentId, name: target.name, result: fullContent };
+    } catch (err) {
+      updateAgentStatus(targetAgentId, "idle", "Dispatch failed", setAgentStatusRef);
+      return { agentId: targetAgentId, name: target.name, result: null };
+    }
   }, []);
 
-  const parseAndDispatch = useCallback((commanderResponse, setChatsRef, setAgentStatusRef, pushFeedRef) => {
+  const sendCommanderReport = useCallback(async (agentResults, setChatsRef, setAgentStatusRef, pushFeedRef) => {
+    const successResults = agentResults.filter(r => r.result);
+    if (successResults.length === 0) return;
+
+    // Build the briefing message for COMMANDER
+    const briefing = successResults
+      .map(r => `[${r.name} REPORT]\n${r.result}`)
+      .join("\n\n---\n\n");
+    const reportRequest = `All squads have completed their missions. Here are the field reports:\n\n${briefing}\n\nNow provide a concise AFTER ACTION REPORT to the user. Summarize what each agent delivered, highlight key outputs, and outline any recommended next steps. Keep it tactical and sharp.`;
+
+    updateAgentStatus("commander", "thinking", "Compiling report...", setAgentStatusRef);
+    pushFeedRef([{ id: `${Date.now()}-cmd-report`, speaker: "COMMANDER", speakerId: "commander", color: "#FFD700", text: "📊 Compiling After Action Report from all squads...", time: new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) }]);
+
+    const history = (chatsRef.current["commander"] || []).map(m => ({ role: m.role, content: m.content }));
+    const reportTs = Date.now();
+    setChatsRef(prev => ({
+      ...prev,
+      commander: [...(prev.commander || []), { role: "assistant", content: "", ts: reportTs }],
+    }));
+    try {
+      const reportContent = await streamChatResponse({
+        agentId: "commander",
+        messages: [...history, { role: "user", content: reportRequest }],
+        onToken: (delta, currentFull) => { updateAgentChat("commander", reportTs, currentFull, setChatsRef); updateAgentStatus("commander", "responding", "Writing report...", setAgentStatusRef); },
+      });
+      pushFeedRef([{ id: `${Date.now()}-cmd-report-done`, speaker: "COMMANDER", speakerId: "commander", color: "#FFD700", text: reportContent, time: new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) }]);
+    } finally {
+      setTimeout(() => updateAgentStatus("commander", "idle", "Idling around", setAgentStatusRef), 3000);
+    }
+  }, []);
+
+  const parseAndDispatch = useCallback(async (commanderResponse, setChatsRef, setAgentStatusRef, pushFeedRef) => {
     if (!commanderResponse) return;
+
+    // Safeguard: if COMMANDER is asking questions, do NOT dispatch — even if [ASSIGN] tags appear.
+    // 2+ question marks strongly indicate an intel-gathering response.
+    const questionCount = (commanderResponse.match(/\?/g) || []).length;
+    if (questionCount >= 2) return;
+
     const assignRegex = /\[ASSIGN:(scribe|amplifier|registry)\]([^[\n]*)/gi;
-    const dispatched = new Set(); let match, delay = 1500;
+    const tasks = [];
+    let match;
+    const seen = new Set();
     while ((match = assignRegex.exec(commanderResponse)) !== null) {
       const agentId = match[1].toLowerCase(), task = match[2].trim();
-      if (!task || dispatched.has(agentId)) continue;
-      dispatched.add(agentId);
-      setTimeout(() => dispatchToAgent(agentId, task, setChatsRef, setAgentStatusRef, pushFeedRef), delay);
-      delay += 1800;
+      if (!task || seen.has(agentId)) continue;
+      seen.add(agentId);
+      tasks.push({ agentId, task });
     }
-  }, [dispatchToAgent]);
+    if (tasks.length === 0) return;
+
+    // Dispatch all agents in parallel and wait for all to complete
+    const results = await Promise.all(
+      tasks.map(({ agentId, task }) => dispatchToAgent(agentId, task, setChatsRef, setAgentStatusRef, pushFeedRef))
+    );
+
+    // After all agents are done, COMMANDER compiles the After Action Report
+    await sendCommanderReport(results, setChatsRef, setAgentStatusRef, pushFeedRef);
+  }, [dispatchToAgent, sendCommanderReport]);
 
   const sendMission = useCallback(async () => {
     const text = userInput.trim(); if (!text || loading) return;
@@ -329,15 +383,27 @@ export default function OfficeWorld({ onBack, chats, setChats }) {
       const assistantTs = Date.now();
       setChats((prev) => ({ ...prev, [activeTarget]: [...(prev[activeTarget] || []), { role: "assistant", content: "", ts: assistantTs }] }));
       const fullContent = await streamChatResponse({
-        agentId: activeTarget, system: target.system, messages: [...history, { role: "user", content: text }],
+        agentId: activeTarget,
+        messages: [...history, { role: "user", content: text }],
         onToken: (delta, currentFull) => { updateAgentStatus(activeTarget, "responding", "TYPING...", setAgentStatus); updateAgentChat(activeTarget, assistantTs, currentFull, setChats); },
       });
+
+      // If the model returned nothing (timeout/model error), remove the empty bubble
+      if (!fullContent || fullContent.trim() === "") {
+        setChats((prev) => ({
+          ...prev,
+          [activeTarget]: (prev[activeTarget] || []).filter((m) => !(m.role === "assistant" && m.ts === assistantTs)),
+        }));
+        updateAgentStatus(activeTarget, "idle", "No response", setAgentStatus);
+        return;
+      }
+
       const newTok = Math.floor((text.length + fullContent.length) / 4);
       setAgentStatus((prev) => ({
         ...prev, [activeTarget]: { status: "responding", tokens: (prev[activeTarget].tokens || 0) + newTok, cost: parseFloat(((prev[activeTarget].cost || 0) + (newTok * 0.000003)).toFixed(4)), activity: "DONE" },
       }));
       pushFeed([{ id: `${Date.now()}-${activeTarget}`, speaker: target.name, speakerId: target.id, color: target.color, text: fullContent, time: new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) }]);
-      if (activeTarget === "commander") parseAndDispatch(fullContent, setChats, setAgentStatus, pushFeed);
+      if (activeTarget === "commander") parseAndDispatch(fullContent, setChats, setAgentStatus, pushFeed).catch(console.error);
       setTimeout(() => updateAgentStatus(activeTarget, "idle", "Idling around", setAgentStatus), 2300);
     } catch { updateAgentStatus(activeTarget, "idle", "Network error", setAgentStatus); } finally { setLoading(false); }
   }, [activeTarget, chats, loading, parseAndDispatch, pushFeed, setChats, userInput]);

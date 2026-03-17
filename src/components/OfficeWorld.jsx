@@ -387,20 +387,52 @@ export default function OfficeWorld({ onBack, chats, setChats }) {
     await sendCommanderReport(results, setChatsRef, setAgentStatusRef, pushFeedRef);
   }, [dispatchToAgent, sendCommanderReport]);
 
-  const sendMission = useCallback(async () => {
-    const text = userInput.trim(); if (!text || loading) return;
-    const target = AGENTS.find((a) => a.id === activeTarget); if (!target) return;
+  const sendMission = useCallback(async (fileData = null) => {
+    const text = userInput.trim();
+    if (!text && !fileData) return;
+    if (loading) return;
+
+    const target = AGENTS.find((a) => a.id === activeTarget);
+    if (!target) return;
+
+    // Build the instruction with file context if present
+    let finalInput = text;
+    if (fileData) {
+      finalInput = `${text || "Tolong analisa dokumen yang saya lampirkan."}\n\n--- DOKUMEN: ${fileData.name} ---\n${fileData.content}`;
+    }
+
     const history = chats[activeTarget] || [];
-    setChats((prev) => ({ ...prev, [activeTarget]: [...history, { role: "user", content: text, ts: Date.now() }] }));
-    setUserInput(""); setLoading(true);
+    // We only show the "clean" text in the UI bubble, but send the "finalInput" to OpenRouter
+    setChats((prev) => ({ 
+      ...prev, 
+      [activeTarget]: [...history, { 
+        role: "user", 
+        content: text, 
+        fileName: fileData ? fileData.name : null,
+        ts: Date.now() 
+      }] 
+    }));
+    
+    setUserInput(""); 
+    setLoading(true);
     updateAgentStatus(activeTarget, "thinking", "Reading mission", setAgentStatus);
-    pushFeed([{ id: `${Date.now()}-user`, speaker: "USER", speakerId: "user", color: "#ffe29b", text: `${target.name}: ${text.slice(0, 120)}`, time: new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) }]);
+    
+    const feedText = fileData ? `📎 ${fileData.name}: ${text.slice(0, 100)}` : `${target.name}: ${text.slice(0, 120)}`;
+    pushFeed([{ 
+      id: `${Date.now()}-user`, 
+      speaker: "USER", 
+      speakerId: "user", 
+      color: "#ffe29b", 
+      text: feedText, 
+      time: new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) 
+    }]);
+
     try {
       const assistantTs = Date.now();
       setChats((prev) => ({ ...prev, [activeTarget]: [...(prev[activeTarget] || []), { role: "assistant", content: "", ts: assistantTs }] }));
       const fullContent = await streamChatResponse({
         agentId: activeTarget,
-        messages: [...history, { role: "user", content: text }],
+        messages: [...history, { role: "user", content: finalInput }],
         onToken: (delta, currentFull) => { updateAgentStatus(activeTarget, "responding", "TYPING...", setAgentStatus); updateAgentChat(activeTarget, assistantTs, currentFull, setChats); },
       });
 

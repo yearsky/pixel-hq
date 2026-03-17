@@ -1,4 +1,5 @@
 import PropTypes from "prop-types";
+import { useState, useRef } from "react";
 import { AGENTS, P } from "../constants/world";
 import { renderMarkdown } from "../utils/renderMarkdown";
 
@@ -23,6 +24,42 @@ export default function InteractionPanel({
   feedEndRef,
   threadEndRef,
 }) {
+  const [attachedFile, setAttachedFile] = useState(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef(null);
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const res = await fetch("http://localhost:8080/api/document/extract", {
+        method: "POST",
+        body: formData,
+      });
+      if (!res.ok) throw new Error("Upload failed");
+      const data = await res.json();
+      setAttachedFile({
+        name: data.filename,
+        content: data.content,
+      });
+    } catch (err) {
+      console.error("Upload error:", err);
+      alert("Failed to extract text from document");
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleSend = () => {
+    sendMission(attachedFile);
+    setAttachedFile(null);
+  };
   return (
     <aside
       style={{
@@ -152,6 +189,15 @@ export default function InteractionPanel({
                       </div>
                     ) : (
                       <div style={{ fontSize: "14px", color: "#f1f5f9", lineHeight: 1.6, whiteSpace: isUser ? "pre-wrap" : undefined }}>
+                        {isUser && m.fileName && (
+                          <div style={{ marginBottom: 8, display: "flex", alignItems: "center", gap: 8, background: "#0f172a", padding: "8px 12px", borderRadius: 8, border: "1px solid #1e293b", width: "fit-content" }}>
+                            <span style={{ fontSize: "16px" }}>📄</span>
+                            <div style={{ display: "flex", flexDirection: "column" }}>
+                              <span style={{ fontSize: "11px", fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>Attachment</span>
+                              <span style={{ fontSize: "12px", color: "#f1f5f9" }}>{m.fileName}</span>
+                            </div>
+                          </div>
+                        )}
                         {isUser ? displayContent : renderMarkdown(displayContent)}
                         {isTyping && (
                           <span className="blink" style={{ color: activeAgent?.color, marginLeft: 2, fontWeight: "bold" }}>
@@ -195,33 +241,82 @@ export default function InteractionPanel({
       {/* INPUT AREA */}
       {activeTab !== "feed" && (
         <div style={{ padding: 16, borderTop: `1px solid ${P.panelBorder}`, background: "#111827" }}>
-          <textarea
-            value={userInput}
-            onChange={(e) => setUserInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                sendMission();
-              }
-            }}
-            placeholder={`Communicate with ${activeAgent?.name}...`}
-            style={{
-              width: "100%",
-              height: 70,
-              resize: "none",
-              background: "#030712",
-              border: "1px solid #374151",
-              color: "#f9fafb",
-              padding: "10px 12px",
-              fontSize: "14px",
-              fontFamily: "'Syne Mono', monospace",
-              outline: "none",
-              borderRadius: 4,
-            }}
-          />
+          {attachedFile && (
+            <div style={{ marginBottom: 10, display: "flex", alignItems: "center", gap: 8, background: "#1e293b", padding: "6px 10px", borderRadius: 6, border: "1px solid #334155" }}>
+              <span style={{ fontSize: "14px" }}>📎</span>
+              <span style={{ fontSize: "12px", color: "#f1f5f9", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{attachedFile.name} (Ready)</span>
+              <button
+                onClick={() => setAttachedFile(null)}
+                style={{ background: "none", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: "14px", padding: "0 4px" }}
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
+          <div style={{ position: "relative" }}>
+            <textarea
+              value={userInput}
+              onChange={(e) => setUserInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSend();
+                }
+              }}
+              placeholder={isUploading ? "Uploading & Parsing..." : `Communicate with ${activeAgent?.name}...`}
+              disabled={isUploading}
+              style={{
+                width: "100%",
+                height: 80,
+                resize: "none",
+                background: "#030712",
+                border: "1px solid #374151",
+                color: "#f9fafb",
+                padding: "10px 42px 10px 12px", // Extra right padding for paperclip
+                fontSize: "14px",
+                fontFamily: "'Syne Mono', monospace",
+                outline: "none",
+                borderRadius: 4,
+                opacity: isUploading ? 0.6 : 1,
+              }}
+            />
+
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileUpload}
+              hidden
+              accept=".pdf,.txt,.md,.csv"
+            />
+
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isUploading || loading}
+              title="Attach Document (PDF, TXT, CSV, MD)"
+              style={{
+                position: "absolute",
+                right: 12,
+                top: 10,
+                background: "none",
+                border: "none",
+                color: P.textMuted,
+                cursor: "pointer",
+                padding: "4px",
+                fontSize: "18px",
+                opacity: (isUploading || loading) ? 0.5 : 1,
+                transition: "color 0.2s",
+              }}
+              onMouseEnter={(e) => (e.target.style.color = activeAgent?.color)}
+              onMouseLeave={(e) => (e.target.style.color = P.textMuted)}
+            >
+              📎
+            </button>
+          </div>
+
           <button
-            onClick={sendMission}
-            disabled={!userInput.trim() || loading}
+            onClick={handleSend}
+            disabled={(!userInput.trim() && !attachedFile) || loading || isUploading}
             style={{
               marginTop: 8,
               width: "100%",
@@ -234,10 +329,10 @@ export default function InteractionPanel({
               border: "none",
               borderRadius: 4,
               transition: "all 0.2s",
-              opacity: !userInput.trim() || loading ? 0.4 : 1,
+              opacity: (!userInput.trim() && !attachedFile) || loading || isUploading ? 0.4 : 1,
             }}
           >
-            {loading ? "PROCESSING ENGINE..." : "EXECUTE COMMAND"}
+            {isUploading ? "UPLOADING..." : loading ? "PROCESSING ENGINE..." : "EXECUTE COMMAND"}
           </button>
         </div>
       )}

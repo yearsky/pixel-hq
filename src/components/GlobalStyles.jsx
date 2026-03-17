@@ -18,6 +18,17 @@ export default function GlobalStyles() {
       @keyframes boot     { 0%{width:0} 100%{width:100%} }
       @keyframes gridPan  { from{background-position:0 0} to{background-position:32px 32px} }
       @keyframes dotPulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.7;transform:scale(.9)} }
+      @keyframes typingBounce { 0%,80%,100%{transform:translateY(0);opacity:0.4} 40%{transform:translateY(-5px);opacity:1} }
+
+      .typing-dot {
+        display: inline-block;
+        width: 6px; height: 6px;
+        border-radius: 50%;
+        background: currentColor;
+        animation: typingBounce 1.2s ease-in-out infinite;
+      }
+      .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+      .typing-dot:nth-child(3) { animation-delay: 0.4s; }
 
       .blink  { animation: blink   1s step-end infinite; }
       .blink2 { animation: blink 1.4s step-end infinite; }

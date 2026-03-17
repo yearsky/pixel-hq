@@ -62,6 +62,7 @@ export default function OfficeWorld({ onBack, chats, setChats }) {
 
   const threadEndRef = useRef(null);
   const feedEndRef = useRef(null);
+  const feedTopRef = useRef(null);
   const threadContainerRef = useRef(null);
   const feedContainerRef = useRef(null);
 
@@ -82,8 +83,23 @@ export default function OfficeWorld({ onBack, chats, setChats }) {
     if (isNearBottom) anchorRef.current.scrollIntoView({ behavior: "smooth" });
   };
 
-  useEffect(() => { smartScroll(threadEndRef, threadContainerRef); }, [chats, activeTarget, activeTab]);
-  useEffect(() => { smartScroll(feedEndRef, feedContainerRef); }, [agentFeed, activeTab]);
+  const forceScrollBottom = (anchorRef) => {
+    if (!anchorRef.current) return;
+    anchorRef.current.scrollIntoView({ behavior: "smooth" });
+  };
+
+  const forceScrollTop = (anchorRef) => {
+    if (!anchorRef.current) return;
+    anchorRef.current.scrollIntoView({ behavior: "smooth" });
+  };
+
+  // Thread: always scroll to bottom on tab/agent switch; feed: scroll to top (newest is at top)
+  useEffect(() => { forceScrollBottom(threadEndRef); }, [activeTarget, activeTab]);
+  useEffect(() => { forceScrollTop(feedTopRef); }, [activeTab]);
+
+  // Conditionally scroll when new content arrives (only if near bottom for thread)
+  useEffect(() => { smartScroll(threadEndRef, threadContainerRef); }, [chats]);
+  useEffect(() => { forceScrollTop(feedTopRef); }, [agentFeed]);
 
   const setSelectedId = useCallback((id) => { selectedRef.current = id; }, []);
   const pushFeed = useCallback((items) => { setAgentFeed((prev) => [...items, ...prev].slice(0, 60)); }, []);
@@ -443,7 +459,7 @@ export default function OfficeWorld({ onBack, chats, setChats }) {
           <div style={{ position: "absolute", right: 10, bottom: 10, border: "1px solid #ffffff24", background: "rgba(12, 19, 36, 0.86)", color: "#bad1f6", padding: "6px 8px", fontSize: "0.34rem", pointerEvents: "none" }}>Drag untuk geser • Wheel untuk zoom</div>
         </div>
       </main>
-      <InteractionPanel isStacked={isStacked} activeTab={activeTab} setActiveTab={setActiveTab} setActiveTarget={setActiveTarget} setSelectedId={setSelectedId} agentFeed={agentFeed} activeThread={activeThread} activeAgent={activeAgent} agentStatus={agentStatus} activeTarget={activeTarget} userInput={userInput} setUserInput={setUserInput} sendMission={sendMission} loading={loading} feedContainerRef={feedContainerRef} threadContainerRef={threadContainerRef} feedEndRef={feedEndRef} threadEndRef={threadEndRef} />
+      <InteractionPanel isStacked={isStacked} activeTab={activeTab} setActiveTab={setActiveTab} setActiveTarget={setActiveTarget} setSelectedId={setSelectedId} agentFeed={agentFeed} activeThread={activeThread} activeAgent={activeAgent} agentStatus={agentStatus} activeTarget={activeTarget} userInput={userInput} setUserInput={setUserInput} sendMission={sendMission} loading={loading} feedContainerRef={feedContainerRef} threadContainerRef={threadContainerRef} feedTopRef={feedTopRef} feedEndRef={feedEndRef} threadEndRef={threadEndRef} />
     </div>
   );
 }

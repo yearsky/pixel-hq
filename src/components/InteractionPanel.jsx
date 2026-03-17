@@ -19,6 +19,7 @@ export default function InteractionPanel({
   loading,
   feedContainerRef,
   threadContainerRef,
+  feedTopRef,
   feedEndRef,
   threadEndRef,
 }) {
@@ -88,6 +89,7 @@ export default function InteractionPanel({
           <div ref={feedContainerRef} style={{ flex: 1, overflowY: "auto", padding: "16px 14px" }}>
             <div style={{ fontSize: "11px", color: P.textMuted, marginBottom: 12, letterSpacing: "0.05em" }}>GLOBAL BROADCAST CHANNEL</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <div ref={feedTopRef} />
               {agentFeed.length === 0 && <div style={{ fontSize: "13px", color: "#475569" }}>Initializing encrypted feed...</div>}
               {agentFeed.map((f) => (
                 <div key={f.id} style={{ borderLeft: `3px solid ${f.color}`, paddingLeft: 12, background: "rgba(255,255,255,0.02)", padding: "8px 12px" }}>
@@ -110,34 +112,65 @@ export default function InteractionPanel({
               {activeThread.length === 0 && <div style={{ fontSize: "13px", color: "#475569" }}>Awaiting mission parameters for {activeAgent?.name}...</div>}
               {activeThread.map((m, i) => {
                 const isLast = i === activeThread.length - 1;
-                const isTyping = isLast && m.role === "assistant" && agentStatus[activeTarget]?.status === "responding";
+                const agentCurrentStatus = agentStatus[activeTarget]?.status;
+                const isTyping = isLast && m.role === "assistant" && (agentCurrentStatus === "responding" || agentCurrentStatus === "thinking");
                 const isUser = m.role === "user";
 
                 const assignTags = m.role === "assistant" ? [...m.content.matchAll(/\[ASSIGN:(scribe|amplifier|registry)\]/gi)].map((x) => x[1]) : [];
                 const displayContent = m.role === "assistant" ? m.content.replaceAll(/\[ASSIGN:(scribe|amplifier|registry)\][^[\]\n]*/gi, "").trim() : m.content;
+
+                const isWaitingForFirstToken = isTyping && displayContent.trim() === "";
 
                 return (
                   <div
                     key={`${m.role}-${i}`}
                     style={{
                       alignSelf: isUser ? "flex-end" : "flex-start",
-                      maxWidth: "90%",
-                      background: isUser ? "#1e293b" : "#111827",
-                      border: isUser ? "1px solid #334155" : `1px solid ${activeAgent?.color}33`,
-                      padding: "10px 14px",
-                      borderRadius: isUser ? "12px 2px 12px 12px" : "2px 12px 12px 12px",
-                      boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
+                      width: isUser ? "fit-content" : "100%",
+                      maxWidth: isUser ? "82%" : "100%",
+                      background: isUser ? "#1e293b" : "transparent",
+                      border: isUser ? "1px solid #334155" : "none",
+                      borderLeft: isUser ? undefined : `3px solid ${activeAgent?.color}44`,
+                      padding: isUser ? "8px 12px 6px 12px" : "10px 0 10px 14px",
+                      borderRadius: isUser ? "12px 2px 12px 12px" : 0,
+                      boxShadow: isUser ? "0 2px 4px rgba(0,0,0,0.2)" : "none",
                     }}
                   >
-                    <div style={{ fontSize: "10px", color: isUser ? "#94a3b8" : activeAgent?.color, fontWeight: 800, marginBottom: 6, textTransform: "uppercase" }}>{isUser ? "YOU" : activeAgent?.name}</div>
-                    <div style={{ fontSize: "14px", color: "#f1f5f9", lineHeight: 1.6, whiteSpace: isUser ? "pre-wrap" : undefined }}>
-                      {isUser ? displayContent : renderMarkdown(displayContent)}
-                      {isTyping && (
-                        <span className="blink" style={{ color: activeAgent?.color, marginLeft: 2, fontWeight: "bold" }}>
-                          ▮
+                    {/* Name label (Agents only) */}
+                    {!isUser && (
+                      <div style={{ fontSize: "10px", color: activeAgent?.color, fontWeight: 800, marginBottom: 6, textTransform: "uppercase" }}>
+                        {activeAgent?.name}
+                      </div>
+                    )}
+
+                    {/* Content or typing animation */}
+                    {isWaitingForFirstToken ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 0", color: activeAgent?.color }}>
+                        <span className="typing-dot" />
+                        <span className="typing-dot" />
+                        <span className="typing-dot" />
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: "14px", color: "#f1f5f9", lineHeight: 1.6, whiteSpace: isUser ? "pre-wrap" : undefined }}>
+                        {isUser ? displayContent : renderMarkdown(displayContent)}
+                        {isTyping && (
+                          <span className="blink" style={{ color: activeAgent?.color, marginLeft: 2, fontWeight: "bold" }}>
+                            ▮
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Timestamp at the bottom */}
+                    {m.ts && (
+                      <div style={{ marginTop: isUser ? 2 : 6, textAlign: isUser ? "right" : "left" }}>
+                        <span style={{ fontSize: "9px", color: isUser ? "#64748b" : "#334155" }}>
+                          {new Date(m.ts).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: isUser ? undefined : "2-digit" })}
                         </span>
-                      )}
-                    </div>
+                      </div>
+                    )}
+
+                    {/* Dispatch tags */}
                     {assignTags.length > 0 && (
                       <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
                         {assignTags.map((tag) => {
@@ -229,6 +262,7 @@ InteractionPanel.propTypes = {
   loading: PropTypes.bool.isRequired,
   feedContainerRef: PropTypes.object,
   threadContainerRef: PropTypes.object,
+  feedTopRef: PropTypes.object,
   feedEndRef: PropTypes.object,
   threadEndRef: PropTypes.object,
 };

@@ -28,18 +28,18 @@ export default function GlobalStyles() {
       ::-webkit-scrollbar-thumb { background: #ffffff25; }
 
       .pixel-input {
-        background: none;
-        border: 1px solid #ffffff1a;
-        color: #e0e0e0;
-        font-family: 'Press Start 2P', monospace;
-        font-size: 0.4rem;
+        background: #10172b;
+        border: 1px solid #ffffff2a;
+        color: #e8efff;
+        font-family: 'Syne Mono', ui-monospace, monospace;
+        font-size: 0.58rem;
         padding: 9px 12px;
         transition: border-color 0.15s;
         outline: none;
         width: 100%;
       }
       .pixel-input:focus { border-color: var(--ac); }
-      .pixel-input::placeholder { color: #ffffff22; }
+      .pixel-input::placeholder { color: #9aa8c7; }
 
       .try-btn {
         background: #7B61FF;

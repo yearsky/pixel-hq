@@ -58,7 +58,8 @@ export default function OfficeWorld({ onBack, chats, setChats }) {
   const [loading, setLoading] = useState(false);
   const [agentFeed, setAgentFeed] = useState([]);
   const [zoomUi, setZoomUi] = useState(Math.round(DEFAULT_ZOOM * 100));
-  const [windowWidth, setWindowWidth] = useState(() => (typeof window !== "undefined" ? window.innerWidth : 1440));
+  const [showWorld, setShowWorld] = useState(true);
+  const [windowWidth, setWindowWidth] = useState(() => (typeof window !== "undefined" ? window.innerWidth : 1200));
 
   const threadEndRef = useRef(null);
   const feedEndRef = useRef(null);
@@ -71,6 +72,40 @@ export default function OfficeWorld({ onBack, chats, setChats }) {
     statusRef.current = initial;
     return initial;
   });
+
+  const [agentConfigs, setAgentConfigs] = useState(() => {
+    const defaultConfigs = Object.fromEntries(AGENTS.map(a => [a.id, { 
+      name: a.name, 
+      system: a.id === "commander" 
+        ? "" // Backend handles the complex commander system by default
+        : `You are ${a.name}, the AI ${a.role} of PixelForce HQ.`
+    }]));
+
+    try {
+      const saved = localStorage.getItem("pixelforce-hq-configs");
+      if (saved) {
+        return { ...defaultConfigs, ...JSON.parse(saved) };
+      }
+    } catch (e) { console.error("Config persistence error", e); }
+    return defaultConfigs;
+  });
+
+  const [atlassianConfig, setAtlassianConfig] = useState(() => {
+    try {
+      const saved = localStorage.getItem("pixelforce-hq-atlassian");
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return { url: "", pat: "" };
+  });
+
+  // Sync configs to localStorage
+  useEffect(() => {
+    localStorage.setItem("pixelforce-hq-configs", JSON.stringify(agentConfigs));
+  }, [agentConfigs]);
+
+  useEffect(() => {
+    localStorage.setItem("pixelforce-hq-atlassian", JSON.stringify(atlassianConfig));
+  }, [atlassianConfig]);
 
   // Sync refs for RAF loop access
   useEffect(() => { statusRef.current = agentStatus; }, [agentStatus]);
@@ -167,27 +202,41 @@ export default function OfficeWorld({ onBack, chats, setChats }) {
   }, [pickTarget]);
 
   useEffect(() => {
+    if (!showWorld) {
+      cameraRef.current.initialized = false;
+      return;
+    }
+
     const resizeCanvas = () => {
       if (!containerRef.current || !canvasRef.current) return;
       const rect = containerRef.current.getBoundingClientRect();
       const w = Math.max(1, Math.floor(rect.width));
       const h = Math.max(1, Math.floor(rect.height));
       const dpr = Math.max(1, window.devicePixelRatio || 1);
+      
       canvasRef.current.width = w * dpr;
       canvasRef.current.height = h * dpr;
       viewportRef.current = { w, h, dpr };
+      
       if (!cameraRef.current.initialized) {
-        centerCamera(DEFAULT_ZOOM);
-        cameraRef.current.initialized = true;
+        // Use a small timeout to let the browser recalculate layout
+        // in case the container size changed from the toggle
+        setTimeout(() => {
+          centerCamera(DEFAULT_ZOOM);
+          cameraRef.current.initialized = true;
+        }, 32);
       } else {
         clampCamera(cameraRef.current);
       }
     };
+
     const observer = new ResizeObserver(resizeCanvas);
-    observer.observe(containerRef.current);
+    if (containerRef.current) {
+      observer.observe(containerRef.current);
+    }
     resizeCanvas();
     return () => observer.disconnect();
-  }, [centerCamera, clampCamera]);
+  }, [centerCamera, clampCamera, showWorld]);
 
   useEffect(() => {
     const loop = () => {
@@ -285,10 +334,14 @@ export default function OfficeWorld({ onBack, chats, setChats }) {
   }, [setZoomAround]);
 
   useEffect(() => {
-    const canvas = canvasRef.current; if (!canvas) return;
+    // We add showWorld as dependency because the canvas element 
+    // is unmounted and remounted when map is toggled.
+    const canvas = canvasRef.current;
+    if (!canvas || !showWorld) return;
+    
     canvas.addEventListener("wheel", handleWheel, { passive: false });
     return () => canvas.removeEventListener("wheel", handleWheel);
-  }, [handleWheel]);
+  }, [handleWheel, showWorld]);
 
   const dispatchToAgent = useCallback(async (targetAgentId, taskText, setChatsRef, setAgentStatusRef, pushFeedRef) => {
     const target = AGENTS.find(a => a.id === targetAgentId);
@@ -301,12 +354,15 @@ export default function OfficeWorld({ onBack, chats, setChats }) {
       time: new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }),
     }]);
     const history = (chatsRef.current[targetAgentId] || []).map(m => ({ role: m.role, content: m.content }));
+    const customCfg = agentConfigs[targetAgentId];
     setChatsRef(prev => ({ ...prev, [targetAgentId]: [...(prev[targetAgentId] || []), { role: "user", content: taskLabel, ts: Date.now() }] }));
     try {
       const assistantTs = Date.now();
       setChatsRef(prev => ({ ...prev, [targetAgentId]: [...(prev[targetAgentId] || []), { role: "assistant", content: "", ts: assistantTs }] }));
       const fullContent = await streamChatResponse({
         agentId: targetAgentId,
+        agentName: customCfg?.name,
+        system: customCfg?.system,
         messages: [...history, { role: "user", content: taskLabel }],
         onToken: (delta, currentFull) => { updateAgentChat(targetAgentId, assistantTs, currentFull, setChatsRef); updateAgentStatus(targetAgentId, "responding", "TYPING...", setAgentStatusRef); },
       });
@@ -395,14 +451,15 @@ export default function OfficeWorld({ onBack, chats, setChats }) {
     const target = AGENTS.find((a) => a.id === activeTarget);
     if (!target) return;
 
-    // Build the instruction with file context if present
     let finalInput = text;
     if (fileData) {
       finalInput = `${text || "Tolong analisa dokumen yang saya lampirkan."}\n\n--- DOKUMEN: ${fileData.name} ---\n${fileData.content}`;
     }
 
     const history = chats[activeTarget] || [];
-    // We only show the "clean" text in the UI bubble, but send the "finalInput" to OpenRouter
+    const customCfg = agentConfigs[activeTarget];
+
+    // 1. Update UI with user message
     setChats((prev) => ({ 
       ...prev, 
       [activeTarget]: [...history, { 
@@ -417,7 +474,8 @@ export default function OfficeWorld({ onBack, chats, setChats }) {
     setLoading(true);
     updateAgentStatus(activeTarget, "thinking", "Reading mission", setAgentStatus);
     
-    const feedText = fileData ? `📎 ${fileData.name}: ${text.slice(0, 100)}` : `${target.name}: ${text.slice(0, 120)}`;
+    // 2. Feed update
+    const feedText = fileData ? `📎 ${fileData.name}: ${text.slice(0, 100)}` : `${customCfg.name}: ${text.slice(0, 120)}`;
     pushFeed([{ 
       id: `${Date.now()}-user`, 
       speaker: "USER", 
@@ -429,14 +487,22 @@ export default function OfficeWorld({ onBack, chats, setChats }) {
 
     try {
       const assistantTs = Date.now();
+      // Add empty assistant bubble
       setChats((prev) => ({ ...prev, [activeTarget]: [...(prev[activeTarget] || []), { role: "assistant", content: "", ts: assistantTs }] }));
+      
       const fullContent = await streamChatResponse({
         agentId: activeTarget,
+        agentName: customCfg?.name,
+        system: customCfg?.system,
         messages: [...history, { role: "user", content: finalInput }],
-        onToken: (delta, currentFull) => { updateAgentStatus(activeTarget, "responding", "TYPING...", setAgentStatus); updateAgentChat(activeTarget, assistantTs, currentFull, setChats); },
+        atlassianUrl: atlassianConfig.url,
+        atlassianPat: atlassianConfig.pat,
+        onToken: (delta, currentFull) => { 
+          updateAgentStatus(activeTarget, "responding", "TYPING...", setAgentStatus); 
+          updateAgentChat(activeTarget, assistantTs, currentFull, setChats); 
+        },
       });
 
-      // If the model returned nothing (timeout/model error), remove the empty bubble
       if (!fullContent || fullContent.trim() === "") {
         setChats((prev) => ({
           ...prev,
@@ -446,15 +512,37 @@ export default function OfficeWorld({ onBack, chats, setChats }) {
         return;
       }
 
-      const newTok = Math.floor((text.length + fullContent.length) / 4);
+      const newTok = Math.floor((finalInput.length + fullContent.length) / 4);
       setAgentStatus((prev) => ({
-        ...prev, [activeTarget]: { status: "responding", tokens: (prev[activeTarget].tokens || 0) + newTok, cost: parseFloat(((prev[activeTarget].cost || 0) + (newTok * 0.000003)).toFixed(4)), activity: "DONE" },
+        ...prev, [activeTarget]: { 
+          status: "responding", 
+          tokens: (prev[activeTarget].tokens || 0) + newTok, 
+          cost: parseFloat(((prev[activeTarget].cost || 0) + (newTok * 0.000003)).toFixed(4)), 
+          activity: "DONE" 
+        },
       }));
-      pushFeed([{ id: `${Date.now()}-${activeTarget}`, speaker: target.name, speakerId: target.id, color: target.color, text: fullContent, time: new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) }]);
-      if (activeTarget === "commander") parseAndDispatch(fullContent, setChats, setAgentStatus, pushFeed).catch(console.error);
+
+      pushFeed([{ 
+        id: `${Date.now()}-${activeTarget}`, 
+        speaker: customCfg.name, 
+        speakerId: target.id, 
+        color: target.color, 
+        text: fullContent, 
+        time: new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) 
+      }]);
+
+      if (activeTarget === "commander") {
+        parseAndDispatch(fullContent, setChats, setAgentStatus, pushFeed).catch(console.error);
+      }
+      
       setTimeout(() => updateAgentStatus(activeTarget, "idle", "Idling around", setAgentStatus), 2300);
-    } catch { updateAgentStatus(activeTarget, "idle", "Network error", setAgentStatus); } finally { setLoading(false); }
-  }, [activeTarget, chats, loading, parseAndDispatch, pushFeed, setChats, userInput]);
+    } catch (err) {
+      console.error(err);
+      updateAgentStatus(activeTarget, "idle", "Network error", setAgentStatus); 
+    } finally { 
+      setLoading(false); 
+    }
+  }, [activeTarget, agentConfigs, chats, loading, parseAndDispatch, pushFeed, setChats, userInput]);
 
   const isStacked = windowWidth < 1100;
   useEffect(() => {
@@ -467,31 +555,90 @@ export default function OfficeWorld({ onBack, chats, setChats }) {
   const activeAgent = AGENTS.find((a) => a.id === activeTarget);
 
   return (
-    <div style={{ height: "100dvh", width: "100vw", display: "grid", gridTemplateColumns: isStacked ? "1fr" : "240px 1fr 360px", gridTemplateRows: isStacked ? "200px 1fr 300px" : "1fr", background: "linear-gradient(180deg, #0b1222 0%, #0a1020 100%)", color: P.text, fontFamily: "'Syne Mono', ui-monospace, monospace", overflow: "hidden" }}>
-      <SquadStatusPanel agentStatus={agentStatus} isStacked={isStacked} />
-      <main style={{ display: "flex", flexDirection: "column", minWidth: 0, height: "100%", overflow: "hidden" }}>
-        <div style={{ borderBottom: `1px solid ${P.panelBorder}`, padding: "12px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 3 }}>{AGENTS.map((a) => (<div key={a.id} style={{ width: 8, height: 8, background: a.color }} />))}</div>
-            <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: "0.58rem", color: "#f3f7ff" }}>PIXEL HOUSE HQ</div>
-            <div style={{ border: "1px solid #5ca66f", color: "#8ade9a", padding: "2px 8px", fontSize: "0.34rem", letterSpacing: "0.04em" }}>LIVE VIEW</div>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ fontSize: "0.4rem", color: "#a7b6d3" }}>Top-down open house monitor</div>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <button onClick={() => centerCamera(DEFAULT_ZOOM)} style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#a7b6d3", padding: "4px 8px", fontSize: "0.4rem", cursor: "pointer" }}>RESET</button>
-              <div style={{ width: 1, height: 12, background: "rgba(255,255,255,0.1)" }} />
-              <div style={{ fontSize: "0.4rem", color: "#a7b6d3", minWidth: 34, textAlign: "right" }}>{zoomUi}%</div>
+    <div style={{ 
+      height: "100dvh", 
+      width: "100vw", 
+      display: "grid", 
+      gridTemplateColumns: isStacked ? "1fr" : (showWorld ? "240px 1fr 360px" : "240px 1fr"), 
+      gridTemplateRows: isStacked ? (showWorld ? "200px 1fr 300px" : "auto 1fr") : "1fr", 
+      background: "linear-gradient(180deg, #0b1222 0%, #0a1020 100%)", 
+      color: P.text, 
+      fontFamily: "'Syne Mono', ui-monospace, monospace", 
+      overflow: "hidden" 
+    }}>
+      <SquadStatusPanel 
+        agentStatus={agentStatus} 
+        isStacked={isStacked} 
+        showWorld={showWorld}
+        onToggleWorld={() => setShowWorld(!showWorld)}
+        agentConfigs={agentConfigs}
+      />
+      
+      {showWorld && (
+        <main style={{ display: "flex", flexDirection: "column", minWidth: 0, height: "100%", overflow: "hidden" }}>
+          <div style={{ borderBottom: `1px solid ${P.panelBorder}`, padding: "12px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 3 }}>{AGENTS.map((a) => (<div key={a.id} style={{ width: 8, height: 8, background: a.color }} />))}</div>
+              <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: "0.58rem", color: "#f3f7ff" }}>PIXEL HOUSE HQ</div>
+              <div style={{ border: "1px solid #5ca66f", color: "#8ade9a", padding: "2px 8px", fontSize: "0.34rem", letterSpacing: "0.04em" }}>LIVE VIEW</div>
             </div>
-            <button onClick={onBack} style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#f3f7ff", padding: "4px 12px", fontSize: "0.42rem", cursor: "pointer", fontFamily: "'Syne Mono', monospace" }}>HOME</button>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ fontSize: "0.4rem", color: "#a7b6d3" }}>Top-down open house monitor</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <button onClick={() => centerCamera(DEFAULT_ZOOM)} style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#a7b6d3", padding: "4px 8px", fontSize: "0.4rem", cursor: "pointer" }}>RESET</button>
+                <div style={{ width: 1, height: 12, background: "rgba(255,255,255,0.1)" }} />
+                <div style={{ fontSize: "0.4rem", color: "#a7b6d3", minWidth: 34, textAlign: "right" }}>{zoomUi}%</div>
+              </div>
+              <button onClick={onBack} style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#f3f7ff", padding: "4px 12px", fontSize: "0.42rem", cursor: "pointer", fontFamily: "'Syne Mono', monospace" }}>HOME</button>
+            </div>
           </div>
-        </div>
-        <div ref={containerRef} style={{ flex: 1, minHeight: 0, background: "#081120", position: "relative" }}>
-          <canvas ref={canvasRef} onMouseDown={handleMouseDown} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp} onMouseMove={handleMouseMove} onClick={handleCanvasClick} onContextMenu={(e) => e.preventDefault()} style={{ width: "100%", height: "100%", display: "block", objectFit: "contain", imageRendering: "pixelated", touchAction: "none" }} />
-          <div style={{ position: "absolute", right: 10, bottom: 10, border: "1px solid #ffffff24", background: "rgba(12, 19, 36, 0.86)", color: "#bad1f6", padding: "6px 8px", fontSize: "0.34rem", pointerEvents: "none" }}>Drag untuk geser • Wheel untuk zoom</div>
-        </div>
-      </main>
-      <InteractionPanel isStacked={isStacked} activeTab={activeTab} setActiveTab={setActiveTab} setActiveTarget={setActiveTarget} setSelectedId={setSelectedId} agentFeed={agentFeed} activeThread={activeThread} activeAgent={activeAgent} agentStatus={agentStatus} activeTarget={activeTarget} userInput={userInput} setUserInput={setUserInput} sendMission={sendMission} loading={loading} feedContainerRef={feedContainerRef} threadContainerRef={threadContainerRef} feedTopRef={feedTopRef} feedEndRef={feedEndRef} threadEndRef={threadEndRef} />
+          <div ref={containerRef} style={{ flex: 1, minHeight: 0, background: "#081120", position: "relative" }}>
+            <canvas 
+              ref={canvasRef} 
+              onMouseDown={handleMouseDown} 
+              onMouseUp={handleMouseUp} 
+              onMouseLeave={handleMouseUp} 
+              onMouseMove={handleMouseMove} 
+              onClick={handleCanvasClick} 
+              onContextMenu={(e) => e.preventDefault()} 
+              style={{ 
+                width: "100%", 
+                height: "100%", 
+                display: "block", 
+                imageRendering: "pixelated", 
+                touchAction: "none" 
+              }} 
+            />
+            <div style={{ position: "absolute", right: 10, bottom: 10, border: "1px solid #ffffff24", background: "rgba(12, 19, 36, 0.86)", color: "#bad1f6", padding: "6px 8px", fontSize: "0.34rem", pointerEvents: "none" }}>Drag untuk geser • Wheel untuk zoom</div>
+          </div>
+        </main>
+      )}
+
+      <InteractionPanel 
+        isStacked={isStacked} 
+        activeTab={activeTab} 
+        setActiveTab={setActiveTab} 
+        setActiveTarget={setActiveTarget} 
+        setSelectedId={setSelectedId} 
+        agentFeed={agentFeed} 
+        activeThread={activeThread} 
+        activeAgent={activeAgent} 
+        agentStatus={agentStatus} 
+        activeTarget={activeTarget} 
+        userInput={userInput} 
+        setUserInput={setUserInput} 
+        sendMission={sendMission} 
+        loading={loading} 
+        feedContainerRef={feedContainerRef} 
+        threadContainerRef={threadContainerRef} 
+        feedTopRef={feedTopRef} 
+        feedEndRef={feedEndRef} 
+        threadEndRef={threadEndRef} 
+        agentConfigs={agentConfigs}
+        setAgentConfigs={setAgentConfigs}
+        atlassianConfig={atlassianConfig}
+        setAtlassianConfig={setAtlassianConfig}
+      />
     </div>
   );
 }

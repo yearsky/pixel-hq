@@ -3,8 +3,11 @@
  */
 export async function streamChatResponse({
   agentId,
+  agentName,
   system,
   messages,
+  atlassianUrl,
+  atlassianPat,
   onToken,
   onStart,
   onEnd,
@@ -19,9 +22,13 @@ export async function streamChatResponse({
       body: JSON.stringify({
         sessionId: "default",
         agentId,
+        agentName, // Pass custom name if available
+        system, // Dynamically injected soul
         messages: messages.map(m => ({ role: m.role, content: m.content })),
         maxTokens: 2000,
-        stream: true
+        stream: true,
+        atlassianUrl,
+        atlassianPat
       }),
     });
 
